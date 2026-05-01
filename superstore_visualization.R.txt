@@ -1,0 +1,118 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# PROJECT  : Superstore Sales Visualization
+# AUTHOR   : Muzzamil Hussain | Data Analytics Intern | Afynix Digital
+# WEEK     : 2 of 6
+# ══════════════════════════════════════════════════════════════════════════════
+
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(scales)
+
+# ── Load & Prepare ────────────────────────────────────────────────────────────
+df <- read.csv("superstore_raw.csv")
+df$OrderDate <- as.Date(df$OrderDate)
+df$Year      <- year(df$OrderDate)
+df$YearMon   <- floor_date(df$OrderDate, "month")
+
+theme_clean <- theme_minimal(base_size = 13) +
+  theme(plot.title      = element_text(face="bold", color="#1A2733", size=16),
+        plot.subtitle   = element_text(color="#6B7E8D", face="italic", size=10),
+        panel.grid.minor= element_blank(),
+        panel.grid.major= element_line(color="#E2E8ED"),
+        plot.background = element_rect(fill="white", color=NA),
+        panel.background= element_rect(fill="#F4F7F9", color=NA))
+
+# ── Fig 1: Sales vs Profit by Category ───────────────────────────────────────
+cat_grp <- df %>%
+  group_by(Category) %>%
+  summarise(Sales=sum(Sales)/1000, Profit=sum(Profit)/1000) %>%
+  tidyr::pivot_longer(c(Sales,Profit), names_to="Metric", values_to="Value")
+
+p1 <- ggplot(cat_grp, aes(x=Category, y=Value, fill=Metric)) +
+  geom_col(position="dodge", width=0.6) +
+  geom_text(aes(label=paste0("$",round(Value),"K")),
+            position=position_dodge(0.6), vjust=-0.5, size=3.5, fontface="bold") +
+  scale_fill_manual(values=c("Sales"="#0077B5","Profit"="#00A896")) +
+  labs(title="Sales vs Profit by Category",
+       subtitle="So what? Technology leads sales — Office Supplies wins on margin",
+       x=NULL, y="USD Thousands") +
+  theme_clean
+ggsave("w2_fig1_cat_sales_profit.png", p1, width=11, height=6.5, dpi=150, bg="white")
+
+# ── Fig 2: Monthly Trend ──────────────────────────────────────────────────────
+monthly <- df %>%
+  group_by(YearMon, Year) %>%
+  summarise(Sales=sum(Sales)/1000, .groups="drop")
+
+p2 <- ggplot(monthly, aes(x=YearMon, y=Sales, color=factor(Year), group=factor(Year))) +
+  geom_area(aes(fill=factor(Year)), alpha=0.08, position="identity") +
+  geom_line(linewidth=1.8) +
+  geom_point(size=1.8) +
+  scale_color_manual(values=c("2021"="#A8C8E0","2022"="#5BA3C9",
+                               "2023"="#0077B5","2024"="#00A896")) +
+  scale_fill_manual(values=c("2021"="#A8C8E0","2022"="#5BA3C9",
+                              "2023"="#0077B5","2024"="#00A896")) +
+  labs(title="Monthly Sales Trend — 2021 to 2024",
+       subtitle="So what? Year-on-year growth confirmed — 2024 consistently leads",
+       x=NULL, y="Sales (USD Thousands)", color="Year") +
+  guides(fill="none") +
+  theme_clean + theme(axis.text.x=element_text(angle=30, hjust=1))
+ggsave("w2_fig2_time_series.png", p2, width=14, height=6, dpi=150, bg="white")
+
+# ── Fig 3: Regional Analysis ──────────────────────────────────────────────────
+reg_grp <- df %>%
+  group_by(Region) %>%
+  summarise(Sales=sum(Sales)/1000,
+            Margin=sum(Profit)/sum(Sales)*100) %>%
+  arrange(desc(Sales))
+
+p3 <- ggplot(reg_grp, aes(x=reorder(Region,-Sales), y=Sales, fill=Margin)) +
+  geom_col(width=0.55) +
+  geom_text(aes(label=paste0("$",round(Sales),"K\n",round(Margin,1),"% margin")),
+            vjust=-0.3, size=3.5, fontface="bold") +
+  scale_fill_gradient(low="#F4A261", high="#00A896", name="Profit\nMargin %") +
+  labs(title="Regional Sales & Profit Margin",
+       subtitle="So what? West leads; South underperforms on both sales and margin",
+       x=NULL, y="Sales (USD Thousands)") +
+  theme_clean
+ggsave("w2_fig3_regional.png", p3, width=11, height=6, dpi=150, bg="white")
+
+# ── Fig 4: Sub-category Profit ────────────────────────────────────────────────
+sub_grp <- df %>%
+  group_by(SubCategory) %>%
+  summarise(Profit=sum(Profit)/1000) %>%
+  arrange(Profit) %>%
+  mutate(Color=ifelse(Profit<0,"Loss","Profit"))
+
+p4 <- ggplot(sub_grp, aes(x=Profit, y=reorder(SubCategory,Profit), fill=Color)) +
+  geom_col(width=0.6) +
+  geom_vline(xintercept=0, color="#1A2733", linewidth=0.9) +
+  scale_fill_manual(values=c("Loss"="#E05C5C","Profit"="#0077B5")) +
+  labs(title="Profit by Sub-Category",
+       subtitle="So what? Loss-making sub-categories must be reviewed — more sales = more losses",
+       x="Profit (USD Thousands)", y=NULL) +
+  theme_clean
+ggsave("w2_fig4_subcategory_profit.png", p4, width=12, height=8, dpi=150, bg="white")
+
+# ── Fig 5: Discount Impact ────────────────────────────────────────────────────
+df$DiscBin <- cut(df$Discount,
+                  breaks=c(-0.01,0.05,0.15,0.25,0.35,0.45,1),
+                  labels=c("0%","1-10%","11-20%","21-30%","31-40%","41%+"))
+disc_profit <- df %>%
+  group_by(DiscBin) %>%
+  summarise(AvgProfit=mean(Profit))
+
+p5 <- ggplot(disc_profit, aes(x=DiscBin, y=AvgProfit,
+             fill=AvgProfit>0)) +
+  geom_col(width=0.6) +
+  geom_hline(yintercept=0, color="#1A2733", linewidth=0.9) +
+  scale_fill_manual(values=c("TRUE"="#0077B5","FALSE"="#E05C5C"),
+                    labels=c("Loss","Profit"), name=NULL) +
+  labs(title="Average Profit by Discount Level",
+       subtitle="So what? Discounts above 20% consistently generate order-level losses",
+       x="Discount Level", y="Avg Profit per Order ($)") +
+  theme_clean
+ggsave("w2_fig5_discount.png", p5, width=11, height=6, dpi=150, bg="white")
+
+cat("All Week 2 visualizations complete.\n")
